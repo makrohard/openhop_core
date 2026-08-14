@@ -1,6 +1,6 @@
 # openHop Core
 
-[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://pymc-dev.github.io/openhop-core/)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://docs.openhop.dev/projects/openhop-core/)
 [![PyPI](https://img.shields.io/pypi/v/openhop-core)](https://pypi.org/project/openhop-core/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -10,12 +10,7 @@
 
 ## Documentation
 
-**Complete documentation is available at **[https://rightup.github.io/openhop-core/](https://pymc-dev.github.io/openhop-core/)**
-
-### Quick Links
-- [Node Usage Guide](https://pymc-dev.github.io/openhop-core/node/) - Guide for using MeshNode
-- [Examples](https://pymc-dev.github.io/openhop-core/examples/) - Working code examples
-- [API Reference](https://pymc-dev.github.io/openhop-core/api/) - Detailed API documentation
+**Complete documentation is available at **[https://docs.openhop.dev/projects/openhop-core/](https://docs.openhop.dev/projects/openhop-core/)**
 
 ## Quick Start
 
@@ -70,8 +65,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
-For examples, see the [documentation](https://pymc-dev.github.io/openhop-core/examples/).
 
 ## Hardware Support
 
@@ -149,7 +142,7 @@ openHop Core/
 
 ## Contributing
 
-Contributions are welcome! Please see our [contributing guide](https://pymc-dev.github.io/openhop-core/contributing/) for details.
+Contributions are welcome! Please see our [contributing guide] for details.
 
 ### Development Setup
 
@@ -177,10 +170,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-- [Documentation](https://pymc-dev.github.io/openhop-core/)
+- [Documentation](https://docs.openhop.dev/projects/openhop-core/)
 - [Issues](https://github.com/openhop-dev/openHop Core/issues)
 - [Discussions](https://github.com/openhop-dev/openHop Core/discussions)
-- [pyMC Discord](https://discord.gg/3s8MMaSTzq)
+- [openHop Discord](https://discord.gg/3s8MMaSTzq)
 - [Meshcore Discord](https://meshcore.gg/)
 
 ---
