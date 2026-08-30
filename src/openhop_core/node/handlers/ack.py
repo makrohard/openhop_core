@@ -83,9 +83,17 @@ class AckHandler(BaseHandler):
         # PATH returns are encrypted as dest_hash + src_hash + MAC + ciphertext.
         # Their outer length varies with the returned path, so do not restrict this
         # to the 20-byte (single AES-block) form.
+        #
+        # Deliberately NOT gated on dispatcher._waiting_acks: firmware
+        # Mesh::onRecvPacket processes every PATH addressed to this node
+        # unconditionally (Mesh.cpp PAYLOAD_TYPE_PATH case: decrypt, then
+        # onPeerPathRecv with extra_type/extra). A companion never populates
+        # _waiting_acks — it tracks expected ACK CRCs app-side and relies on the
+        # ack-received listener — so gating here made the delivery confirmation
+        # for a flood text message (whose ACK rides the PATH return) invisible
+        # to companion clients.
         if (
-            self.dispatcher._waiting_acks
-            and self.dispatcher.local_identity
+            self.dispatcher.local_identity
             and self.dispatcher.contact_book
             and len(payload) >= 2
             and payload[0] == self.dispatcher.local_identity.get_public_key()[0]
@@ -137,10 +145,12 @@ class AckHandler(BaseHandler):
                 self.log("Encrypted PATH ACK extra is shorter than its CRC")
                 return None
 
-            crc = int.from_bytes(decrypted[extra_start + 1 : extra_start + 5], "little")
-            if crc in self.dispatcher._waiting_acks:
-                return crc
-            return None
+            # Return the CRC of any authenticated embedded ACK. Matching it
+            # against a waiter is the notify path's job: dispatcher-level
+            # waiters resolve through _waiting_acks, and a companion matches it
+            # against its app-side expected-ACK table (firmware processAck
+            # ignores CRCs it does not know, so an unknown CRC is harmless).
+            return int.from_bytes(decrypted[extra_start + 1 : extra_start + 5], "little")
 
         return None
 

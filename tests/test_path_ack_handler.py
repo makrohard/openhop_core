@@ -344,3 +344,90 @@ async def test_path_handler_updates_matched_contact_sends_reciprocal_and_resolve
         shared_secret[:16], shared_secret, bytes(reciprocal.payload[2:])
     )
     assert reciprocal_inner[:3] == bytes([PathUtils.encode_path_len(1, 1), 0xC3, 0xFF])
+
+
+
+
+@pytest.mark.asyncio
+async def test_path_embedded_ack_notifies_listener_without_dispatcher_waiters():
+    """Companion flow: the app (not the dispatcher) tracks expected ACK CRCs.
+
+    Firmware Mesh::onRecvPacket decrypts every PATH addressed to this node and
+    hands its extra (the embedded ACK for a flood text message) to processAck —
+    with no dispatcher-level waiting-ack precondition. The PATH-embedded ACK
+    must therefore reach the ack-received listener even when _waiting_acks is
+    empty, or a companion client never sees delivery confirmation for a flood DM.
+    """
+    contacts = ContactStore()
+    contacts.load_from([Contact(public_key=SENDER_IDENTITY.get_public_key(), name="peer")])
+    ack_crc = 0x12345678
+    dispatcher = SimpleNamespace(
+        local_identity=LOCAL_IDENTITY,
+        contact_book=contacts,
+        _waiting_acks={},  # companion: nothing waits at dispatcher level
+    )
+    handler = AckHandler(lambda _message: None, dispatcher)
+
+    notified = []
+
+    async def listener(crc):
+        notified.append(crc)
+
+    handler.set_ack_received_callback(listener)
+
+    packet = _path_return(
+        LOCAL_IDENTITY,
+        SENDER_IDENTITY,
+        path=[],
+        extra_type=PAYLOAD_TYPE_ACK,
+        extra=ack_crc.to_bytes(4, "little"),
+    )
+    found = await handler.process_path_ack_variants(packet)
+    assert found == ack_crc
+    await handler._notify_ack_received(found)
+    assert notified == [ack_crc]
+
+
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("listener_consumes", [True, False])
+async def test_decrypted_path_ack_is_authenticated_regardless_of_consumption(listener_consumes):
+    """Firmware parity for PATH packets (Mesh::onRecvPacket): a successful
+    MAC-then-decrypt alone proves the PATH belongs to this identity, so the
+    handler returns authenticated — whether or not the embedded CRC matched a
+    pending send (that match is processAck's separate, app-level decision).
+    HandlerResult.authenticated then drives do-not-retransmit in the dispatcher
+    and the forwarding decision in the companion bridge.
+    """
+    contacts = ContactStore()
+    contacts.add(Contact(public_key=SENDER_IDENTITY.get_public_key(), name="peer"))
+    ack_crc = 0x12345678
+    dispatcher = Dispatcher(_CallbackRadio())
+    dispatcher.local_identity = LOCAL_IDENTITY
+    dispatcher.set_contact_book(contacts)
+    notified: list[int] = []
+
+    def listener(crc):
+        notified.append(crc)
+        return listener_consumes
+
+    dispatcher.set_ack_received_listener(listener)
+
+    ack_handler = AckHandler(lambda _m: None, dispatcher)
+    ack_handler.set_ack_received_callback(dispatcher._register_ack_received)
+
+    packet = _path_return(
+        LOCAL_IDENTITY,
+        SENDER_IDENTITY,
+        path=[],
+        extra_type=PAYLOAD_TYPE_ACK,
+        extra=ack_crc.to_bytes(4, "little"),
+    )
+    result = await PathHandler(lambda _m: None, ack_handler=ack_handler)(packet)
+    assert result.authenticated is True, (
+        "a MAC-verified PATH is authenticated independent of CRC consumption"
+    )
+    assert notified == [ack_crc], "the embedded CRC must still reach the listener"
+
