@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Optional
+from typing import Optional
 
 from ...protocol import Packet
 from ...protocol.constants import PAYLOAD_TYPE_ACK
 from ...protocol.packet_utils import PathUtils
-from ...util.callbacks import invoke_maybe_awaitable
+from ...util.callbacks import AckReceivedCallback, invoke_maybe_awaitable
 from .base import BaseHandler
 from .crypto_helpers import iter_decrypt_by_src_hash
 
@@ -25,12 +25,14 @@ class AckHandler(BaseHandler):
     def __init__(self, log_fn, dispatcher=None):
         self.log = log_fn
         self.dispatcher = dispatcher
-        self._ack_received_callback: Optional[Callable[[int], Awaitable[None] | None]] = None
+        self._ack_received_callback: Optional[AckReceivedCallback] = None
 
-    def set_ack_received_callback(
-        self, callback: Optional[Callable[[int], Awaitable[None] | None]]
-    ):
-        """Set callback to notify dispatcher when ACK is received."""
+    def set_ack_received_callback(self, callback: Optional[AckReceivedCallback]):
+        """Set the ACK-received callback (the dispatcher's _register_ack_received).
+
+        See :data:`AckReceivedCallback`: it returns whether the CRC matched one of this node's
+        own pending sends (truthy = consumed -> do-not-retransmit; False/None = not mine).
+        """
         self._ack_received_callback = callback
 
     def set_dispatcher(self, dispatcher):
@@ -44,10 +46,18 @@ class AckHandler(BaseHandler):
             # Firmware BaseChatMesh::onAckRecv marks the packet do-not-retransmit
             # when the ACK matches a message this node sent (processAck != NULL),
             # so a client repeater does not re-flood an ACK addressed to itself.
-            # _waiting_acks holds the CRCs we are awaiting — the Core equivalent.
+            # Two places can be awaiting it: dispatcher-level waiters
+            # (_waiting_acks) and an application listener (a companion tracks
+            # expected ACK CRCs app-side). Mark for a dispatcher waiter BEFORE
+            # notifying — the notify callback resolves and pops that waiter, and
+            # marking first also keeps the packet marked when a listener raises
+            # (the pre-existing guarantee). A listener-consumed ACK can only be
+            # marked after the listener reports it.
             if self.dispatcher is not None and ack_crc in self.dispatcher._waiting_acks:
                 packet.mark_do_not_retransmit()
-            await self._notify_ack_received(ack_crc)
+            consumed = await self._notify_ack_received(ack_crc)
+            if consumed:
+                packet.mark_do_not_retransmit()
 
     async def process_discrete_ack(self, packet: Packet) -> Optional[int]:
         """Process a discrete ACK packet and return the CRC if valid."""
@@ -154,7 +164,9 @@ class AckHandler(BaseHandler):
 
         return None
 
-    async def _notify_ack_received(self, crc: int):
-        """Notify the dispatcher that an ACK was received."""
+    async def _notify_ack_received(self, crc: int) -> Optional[bool]:
+        """Notify the registered ACK callback; return its result (truthy when the ACK was
+        consumed/matched app-side, so the caller marks the packet do-not-retransmit)."""
         if self._ack_received_callback:
-            await invoke_maybe_awaitable(self._ack_received_callback, crc)
+            return await invoke_maybe_awaitable(self._ack_received_callback, crc)
+        return None
